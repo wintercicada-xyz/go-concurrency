@@ -17,17 +17,21 @@ func (order Order) Process() Product {
 	return Product{}
 }
 
-// 工人
-type Worker struct{}
+// 自由工人
+type Worker struct {
+	orderIn    chan Order
+	productOut chan Product
+}
 
-// 自律工人的工作方式
-func (worker Worker) Work(orderIn <-chan Order, productOut chan<- Product) {
-	// 工人是独立工作的，当接到订单后就各自干各的，所以要新开一个 Goroutine
+func NewWorker() Worker {
+	orderIn := make(chan Order)
+	productOut := make(chan Product)
 	go func() {
 		for order := range orderIn {
 			productOut <- order.Process()
 		}
 	}()
+	return Worker{orderIn, productOut}
 }
 
 // 工厂
@@ -37,10 +41,21 @@ type Factory struct {
 	workers    []Worker
 }
 
-// 拥有许多自律工人的先进工厂
 func (factory Factory) Work() {
 	for _, worker := range factory.workers {
-		worker.Work(factory.orderIn, factory.productOut)
+		// 将订单分配给工人
+		go func(orderIn chan<- Order) {
+			for order := range factory.orderIn {
+				orderIn <- order
+			}
+		}(worker.orderIn)
+
+		// 收集工人生产的产品
+		go func(productOut <-chan Product) {
+			for product := range productOut {
+				factory.productOut <- product
+			}
+		}(worker.productOut)
 	}
 }
 
@@ -51,7 +66,7 @@ func main() {
 	factory := Factory{
 		orderIn,
 		productOut,
-		[]Worker{Worker{}, Worker{}, Worker{}},
+		[]Worker{NewWorker(), NewWorker(), NewWorker()},
 	}
 	factory.Work()
 	for {
