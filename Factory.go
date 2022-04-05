@@ -17,27 +17,34 @@ func (order Order) Process() Product {
 	return Product{}
 }
 
-// 自由工人
+// 工人
 type Worker struct {
 	orderIn    chan Order
 	productOut chan Product
+	stop       <-chan struct{}
 }
 
-func NewWorker() Worker {
+func NewWorker(stop <-chan struct{}) Worker {
 	orderIn := make(chan Order)
 	productOut := make(chan Product)
 	go func() {
-		for order := range orderIn {
-			productOut <- order.Process()
+		for {
+			select {
+			case <-stop:
+				return
+			case order := <-orderIn:
+				productOut <- order.Process()
+			}
 		}
 	}()
-	return Worker{orderIn, productOut}
+	return Worker{orderIn, productOut, stop}
 }
 
 // 工厂
 type Factory struct {
 	orderIn    <-chan Order
 	productOut chan<- Product
+	stop       chan struct{}
 	workers    []Worker
 }
 
@@ -59,14 +66,20 @@ func (factory Factory) Work() {
 	}
 }
 
+func (factory Factory) Stop() {
+	close(factory.stop)
+}
+
 func main() {
 	// 初始化订单输入与产品输出的 Channel
 	orderIn := make(chan Order, 10)
 	productOut := make(chan Product, 10)
+	stop := make(chan struct{})
 	factory := Factory{
 		orderIn,
 		productOut,
-		[]Worker{NewWorker(), NewWorker(), NewWorker()},
+		stop,
+		[]Worker{NewWorker(stop), NewWorker(stop), NewWorker(stop)},
 	}
 	factory.Work()
 	for {
